@@ -1,5 +1,6 @@
 import feedparser
 from datetime import datetime, timedelta
+from urllib.parse import quote
 import re
 import html
 from rfeed import Item, Feed, Guid
@@ -8,156 +9,173 @@ from googlenewsdecoder import gnewsdecoder
 # 방화벽 우회용 브라우저 위장
 feedparser.USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-urls = [
-    # 모빌리티 & EV 전문 매체 (전체수집)
-    "https://carapp-news.com/feed/",
-    "https://electrek.co/feed/",
-    "https://www.notateslaapp.com/rss/",
-    "https://cleantechnica.com/feed/",
-    "https://www.greencarreports.com/news/rss-feed",
-    "https://news.google.com/rss/search?q=site:greencarcongress.com&hl=en-US&gl=US&ceid=US:en",
-    
-    # 종합 자동차 및 테크 전문 매체 (선별 수집)
-    "https://www.autonews.com/arc/outboundfeeds/sitemap-news/",
-    "https://techcrunch.com/category/transportation/feed/",
-    "https://www.smartcitiesdive.com/feeds/news/",
-    
-    # 종합 기술 동향 매체 (선별 수집)
-    "https://www.theverge.com/rss/index.xml",
-    "https://feeds.feedburner.com/harvardbusinessreview",
-    "https://www.technologyreview.com/feed/",
-    "https://news.google.com/rss/search?q=site:news.naver.com/main/read.nhn%20OR%20site:news.naver.com/article%20%22sid=105%22&hl=ko&gl=KR&ceid=KR:ko",
-    
-    # 종합 앱 동향 매체 (선별 수집)
-    "https://news.google.com/rss/search?q=site:surfit.io&hl=ko&gl=KR&ceid=KR:ko",
-    "https://techcrunch.com/category/apps/feed/",
-    "https://www.lennysnewsletter.com/feed",
-    "https://productmindset.substack.com/feed",
-    "https://uxdesign.cc/feed",
-    
-    # 키워드 기반 및 전용 앱 피드
-    "https://news.google.com/rss/search?q=%22카카오모빌리티%22%20OR%20%22티맵%22%20OR%20%22커넥티드카%22%20OR%20%22쏘카%22&hl=ko&gl=KR&ceid=KR:ko",
-    "https://9to5mac.com/guides/carplay/feed",
-    "https://9to5google.com/guides/android-auto/feed/",
-    "https://www.teslarati.com/category/tesla-software-updates/feed/",
-    "https://news.google.com/rss/search?q=%22Mercedes+me%22+OR+%22myVW%22+OR+%22myAudi%22&hl=en-US&gl=US&ceid=US:en",
-    "https://news.google.com/rss/search?q=%22Stellantis+app%22+OR+%22My+Jeep%22+OR+%22My+Ram%22+OR+%22Connect+ONE%22&hl=en-US&gl=US&ceid=US:en",
-    "https://news.google.com/rss/search?q=%22My+BMW+app%22+OR+%22BMW+ConnectedDrive%22&hl=en-US&gl=US&ceid=US:en"
+
+def gnews(query, lang="en"):
+    """Google News RSS 검색 URL 생성. 공식 RSS가 없거나 불안정한 매체(Reuters, AP 등)용."""
+    if lang == "ko":
+        return f"https://news.google.com/rss/search?q={quote(query)}&hl=ko&gl=KR&ceid=KR:ko"
+    return f"https://news.google.com/rss/search?q={quote(query)}&hl=en-US&gl=US&ceid=US:en"
+
+
+# (URL, 키워드 필터 적용 여부)
+#   False = 전체 수집  → 외교·국제관계 전문 매체 (기사 대부분이 주제에 부합)
+#   True  = 선별 수집  → 종합 매체 국제면 (외교 키워드가 있는 기사만)
+# ※ NYT, WaPo, FT, Economist, Foreign Affairs 등 유료 매체는 제외했습니다.
+feeds = [
+    # ── 외교·국제관계 전문 매체 / 싱크탱크 (전체 수집, 무료) ──
+    ("https://thediplomat.com/feed/", False),                            # 아시아태평양 외교·안보
+    ("https://warontherocks.com/feed/", False),                          # 안보·전략 분석
+    ("https://www.crisisgroup.org/rss", False),                          # 국제위기그룹: 분쟁 지역 해설
+    ("https://www.lowyinstitute.org/the-interpreter/rss.xml", False),    # 호주 로위연구소: 짧은 해설글
+    ("https://www.38north.org/feed/", False),                            # 북한 전문
+    ("https://news.un.org/feed/subscribe/en/news/all/rss.xml", False),   # UN 뉴스
+    ("https://www.rferl.org/api/ajj_uqtl-vomx-tpeb_tuqr", False),        # RFE/RL: 동유럽·러시아·중앙아
+    (gnews("site:cfr.org"), False),                                      # 미 외교협회(CFR): 배경 설명 글이 많음
+    (gnews("site:carnegieendowment.org"), False),                        # 카네기 국제평화재단
+
+    # ── 영어 종합 매체 국제면 (선별 수집, 무료) ──
+    ("http://feeds.bbci.co.uk/news/world/rss.xml", True),
+    ("https://www.theguardian.com/world/rss", True),
+    ("https://www.aljazeera.com/xml/rss/all.xml", True),
+    ("https://rss.dw.com/xml/rss-en-world", True),                       # 독일 DW
+    ("https://www.france24.com/en/rss", True),
+    ("https://feeds.npr.org/1004/rss.xml", True),                        # NPR World
+    ("https://www.politico.eu/feed/", True),                             # 유럽 정치·외교
+    (gnews("site:reuters.com/world"), True),                             # Reuters (공식 RSS 없음)
+    (gnews("site:apnews.com"), True),                                    # AP (공식 RSS 없음)
+
+    # ── 한국어 매체 (선별 수집) ──
+    ("https://www.voakorea.com/api/ajmjpil-vomx-tpeb-bpm", False),       # VOA 코리아 한반도 (외교 비중 높음)
+    ("https://www.yna.co.kr/rss/international.xml", True),               # 연합뉴스 국제
+    ("https://www.hani.co.kr/rss/international/", True),                 # 한겨레 국제
+
+    # ── 키워드 전용 피드 (이미 키워드로 검색된 결과이므로 전체 수집) ──
+    (gnews('"정상회담" OR "외교부" OR "안보리" OR "한미동맹" OR "북핵" OR "한일관계" OR "한중관계"', "ko"), False),
+    (gnews('"State Department" OR "foreign minister" OR "Security Council" OR "peace talks" OR "bilateral summit"'), False),
 ]
 
-mobility_keywords = [
-    # Vehicle & HW
-    'EV', 'Electric Vehicle', 'Automotive', 'Battery', 'NACS', 'CCS',
-    '전기차', '배터리', '충전 표준',
-    
-    # AV & Connected (SDV 핵심 영역)
-    'AV', 'Autonomous Driving', 'Robotaxi', 'Autonomous Vehicle', 
-    'Telematics', 'OTA', 'Over-the-Air', 'Connected Car',
-    '자율주행', '로보택시', '커넥티드카', '텔레매틱스', '무선 업데이트',
-    
-    # MaaS & Players
-    'Mobility', 'MaaS', 'Fleet', 'Kakao Mobility', 'Socar', 'Tmap',
-    '모빌리티', '카카오모빌리티', '쏘카', '티맵', '차량공유'
+# ── 외교 키워드 (선별 수집 피드에 적용) ──
+actor_keywords = [
+    # 기관·행위자
+    'diplomacy', 'diplomat', 'diplomatic', 'ambassador', 'embassy', 'envoy',
+    'foreign minister', 'foreign ministry', 'State Department', 'Secretary of State',
+    'United Nations', 'UN', 'Security Council', 'NATO', 'G7', 'G20', 'EU', 'European Union',
+    'ASEAN', 'BRICS', 'IAEA', 'WTO', 'ICJ', 'ICC',
+    '외교', '외교부', '대사', '대사관', '특사', '국무부', '국무장관',
+    '유엔', '안보리', '나토', '유럽연합', '아세안', '브릭스',
 ]
 
-technology_keywords = [
-    # Platform & App Architecture
-    'Superapp', 'Platform', 'OS', 'In-vehicle Infotainment', 'IVI',
-    '슈퍼앱', '플랫폼', '인포테인먼트',
-    
-    # BM & Commerce
-    'FoD', 'Feature on Demand', 'Fintech', 'Payment', 'Subscription', 'Membership',
-    '핀테크', '결제', '구독', '멤버십',
-    
-    # AI & Personalization
-    'AI Agent', 'Artificial Intelligence', 'LLM', 'Large Language Model', 'Personalization', 'Recommendation Engine',
-    '인공지능', 'AI 에이전트', '개인화', '추천 엔진',
-    
-    # UX/UI
-    'UX', 'User Experience', 'HMI', 'Human-Machine Interface',
-    '사용자경험', '인터랙션 디자인'
+event_keywords = [
+    # 사건·행위
+    'summit', 'bilateral', 'multilateral', 'treaty', 'accord', 'ceasefire', 'truce',
+    'peace talks', 'negotiation', 'sanctions', 'alliance', 'geopolitics', 'geopolitical',
+    'trade war', 'tariffs', 'export controls', 'nuclear', 'denuclearization',
+    'humanitarian', 'refugees', 'annexation', 'sovereignty', 'territorial',
+    '정상회담', '양자', '다자', '조약', '협정', '휴전', '평화협상', '협상', '제재',
+    '동맹', '지정학', '관세', '무역전쟁', '수출통제', '핵', '비핵화',
+    '인도적', '난민', '주권', '영토',
 ]
 
-all_target_keywords = mobility_keywords + technology_keywords
+region_keywords = [
+    # 지역·현안
+    'North Korea', 'Pyongyang', 'Korean Peninsula', 'Taiwan', 'Indo-Pacific',
+    'South China Sea', 'Ukraine', 'Kremlin', 'Gaza', 'Middle East', 'Iran', 'Israel',
+    '북한', '평양', '한반도', '한미', '한일', '한중', '대만', '인도태평양',
+    '남중국해', '우크라이나', '크렘린', '가자', '중동', '이란', '이스라엘',
+]
 
-# 🚨 에러 원천 차단: 정규식을 버리고 가장 안전한 텍스트 파싱 방식으로 변경
-def clean_text(raw_text):
-    if not raw_text: return ""
-    
-    # 1. HTML 태그 제거 및 특수문자 해독
+all_target_keywords = actor_keywords + event_keywords + region_keywords
+
+
+def build_matcher(keywords):
+    """영어 키워드는 단어 경계(\\b) 매칭(UN이 'sun'에 걸리는 것 방지), 한글은 부분 문자열 매칭."""
+    korean = [k.lower() for k in keywords if re.search(r'[가-힣]', k)]
+    english = [re.escape(k.lower()) for k in keywords if not re.search(r'[가-힣]', k)]
+    pattern = re.compile(r'\b(?:' + '|'.join(english) + r')\b') if english else None
+
+    def match(text):
+        text = text.lower()
+        if pattern and pattern.search(text):
+            return True
+        return any(k in text for k in korean)
+    return match
+
+
+is_diplomacy_news = build_matcher(all_target_keywords)
+
+
+def clean_text(raw_text, strip_source=False):
+    """HTML 태그 제거·특수문자 해독. Google News 제목의 ' - 매체명' 꼬리표 제거."""
+    if not raw_text:
+        return ""
     text = re.sub(r'<[^>]+>', '', raw_text)
     text = html.unescape(text).replace('\xa0', ' ').strip()
-    
-    # 2. 다양한 대시 기호들과 파이프 기호를 표준 공백 분할용으로 정리
-    for dash in ['—', '–', '-', '|']:
-        if dash in text:
-            parts = text.rsplit(dash, 1)  # 맨 오른쪽 대시를 기준으로 분할
-            last_part = parts[1].lower().strip()
-            # 분할된 뒷부분이 '네이버'나 'naver' 관련 단어라면 앞부분만 취함
-            if 'naver' in last_part or '네이버' in last_part:
-                text = parts[0].strip()
-                
-    # 3. 만약 정리 후 껍데기만 남았거나 네이버 텍스트 자체라면 제외하기 위해 빈값 리턴
-    if text.lower().strip() in ['naver', '네이버', '']:
-        return ""
-        
+    if strip_source:
+        for dash in [' - ', ' – ', ' — ', ' | ']:
+            if dash in text:
+                text = text.rsplit(dash, 1)[0].strip()
+                break
     return re.sub(r'\s+', ' ', text).strip()
 
+
 raw_items = []
+seen_links = set()
 now_utc = datetime.utcnow()
 retention_days = now_utc - timedelta(days=14)
 
-print(f"[{now_utc.strftime('%Y-%m-%d %H:%M:%S')}] RSS 피드 무손실 수집 시작...")
+print(f"[{now_utc.strftime('%Y-%m-%d %H:%M:%S')}] 국제·외교 뉴스 RSS 수집 시작...")
 
-for url in urls:
+for url, needs_filter in feeds:
     try:
         feed = feedparser.parse(url)
+        if not feed.entries:
+            print(f"⚠️  항목 없음 ({url})")
+        is_gnews = "news.google.com" in url
+
         for entry in feed.entries:
-            try: 
+            try:
                 published_parsed = entry.get("published_parsed") or entry.get("updated_parsed")
-                
-                if published_parsed:
-                    published_dt = datetime(*published_parsed[:6])
-                    
-                    if published_dt > retention_days:
-                        raw_title = entry.get("title", "")
-                        raw_summary = entry.get("summary", "") or entry.get("description", "")
-                        content_text = (raw_title + " " + raw_summary).lower()
-                        
-                        filter_required_domains = ["autonews.com", "techcrunch.com", "smartcitiesdive.com", "theverge.com", "harvardbusinessreview", "technologyreview.com", "news.naver.com", "surfit", "news.google.com"]
-                        
-                        if any(domain in url for domain in filter_required_domains):
-                            is_mobility_news = any(keyword in content_text for keyword in all_target_keywords)
-                        else:
-                            is_mobility_news = True
-                        
-                        if is_mobility_news:
-                            clean_title = clean_text(raw_title)
-                            safe_description = clean_text(raw_summary if raw_summary else raw_title)
-                            
-                            if not clean_title:
-                                continue
-                                
-                            final_link = entry.get("link", "https://github.com")
-                            if "news.google.com" in final_link:
-                                try:
-                                    decoded = gnewsdecoder(final_link)
-                                    if decoded and decoded.get("status"):
-                                        final_link = decoded.get("decoded_url", final_link)
-                                except Exception:
-                                    pass
-                            
-                            item = Item(
-                                title=clean_title,
-                                link=final_link,
-                                description=safe_description,
-                                pubDate=published_dt,
-                                guid=Guid(final_link)
-                            )
-                            raw_items.append((published_dt, item))
+                if not published_parsed:
+                    continue
+                published_dt = datetime(*published_parsed[:6])
+                if published_dt <= retention_days:
+                    continue
+
+                raw_title = entry.get("title", "")
+                raw_summary = entry.get("summary", "") or entry.get("description", "")
+
+                if needs_filter and not is_diplomacy_news(raw_title + " " + raw_summary):
+                    continue
+
+                clean_title = clean_text(raw_title, strip_source=is_gnews)
+                if not clean_title:
+                    continue
+                # Google News의 summary는 링크 목록이라 쓸모없음 → 제목으로 대체
+                safe_description = clean_title if is_gnews else clean_text(raw_summary or raw_title)
+
+                final_link = entry.get("link", "https://github.com")
+                if is_gnews:
+                    try:
+                        decoded = gnewsdecoder(final_link)
+                        if decoded and decoded.get("status"):
+                            final_link = decoded.get("decoded_url", final_link)
+                    except Exception:
+                        pass
+
+                if final_link in seen_links:   # 여러 피드에 겹친 기사 중복 제거
+                    continue
+                seen_links.add(final_link)
+
+                raw_items.append((published_dt, Item(
+                    title=clean_title,
+                    link=final_link,
+                    description=safe_description,
+                    pubDate=published_dt,
+                    guid=Guid(final_link)
+                )))
             except Exception:
                 continue
-                
+
     except Exception as e:
         print(f"❌ 사이트 접근 실패 ({url}): {e}")
 
@@ -174,17 +192,17 @@ if len(items) == 0:
     ))
 
 new_feed = Feed(
-    title="Custom Mobility App and Technology News",
-    link="https://mobilityapptrendtracker.com",
-    description="Strictly valid mobility & tech news feed",
+    title="International Affairs & Diplomacy News",
+    link="https://github.com/twochaemi-dotcom/trend-tracker",
+    description="외교 현안과 국제관계 기초를 위한 무료 국제뉴스 피드",
     language="ko",
     items=items
 )
 
-output_filename = "trend_feed.xml"
+output_filename = "trend_feed.xml"   # 기존 GitHub Actions 워크플로와 호환되도록 파일명 유지
 try:
     with open(output_filename, "w", encoding="utf-8") as f:
         f.write(new_feed.rss())
-    print(f"✅ 성공: 총 {len(items)}개의 표준 RSS 항목이 '{output_filename}'에 저장되었습니다.")
+    print(f"✅ 성공: 총 {len(items)}개의 RSS 항목이 '{output_filename}'에 저장되었습니다.")
 except Exception as e:
     print(f"❌ 파일 저장 실패: {e}")
