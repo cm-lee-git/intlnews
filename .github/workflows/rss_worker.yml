@@ -23,7 +23,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install feedparser rfeed googlenewsdecoder
+          pip install -r requirements.txt
 
       - name: Run RSS Script
         run: |
