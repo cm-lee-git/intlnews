@@ -1,0 +1,2 @@
+googlenewsdecoder
+selectolax<1.0.0
